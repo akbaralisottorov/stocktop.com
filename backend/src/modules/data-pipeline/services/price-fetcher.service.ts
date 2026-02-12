@@ -1,98 +1,105 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-
-export interface StockPriceData {
-  symbol: string;
-  price: number;
-  open: number;
-  high: number;
-  low: number;
-  volume: number;
-  change: number;
-  changePercent: number;
-  timestamp: Date;
-}
+import { PrismaService } from '../../../prisma/prisma.service';
 
 @Injectable()
 export class PriceFetcherService {
   private readonly logger = new Logger(PriceFetcherService.name);
+  private readonly alphaVantageKey: string;
+  private readonly fmpKey: string;
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private configService: ConfigService,
+    private prisma: PrismaService,
+  ) {
+    this.alphaVantageKey = this.configService.get<string>('ALPHA_VANTAGE_KEY');
+    this.fmpKey = this.configService.get<string>('FMP_API_KEY');
+  }
 
-  /**
-   * Fetches real-time price data from Alpha Vantage API.
-   */
-  async fetchPrice(symbol: string): Promise<StockPriceData> {
-    this.logger.debug(`Fetching real price for ${symbol} from Alpha Vantage...`);
-
-    const apiKey = this.configService.get<string>('ALPHA_VANTAGE_API_KEY');
-    
-    if (!apiKey) {
-        this.logger.warn('ALPHA_VANTAGE_API_KEY is missing. Falling back to mock data.');
-        return this.getMockData(symbol);
-    }
-
+  async fetchDailyPrice(symbol: string) {
     try {
-      const response = await axios.get('https://www.alphavantage.co/query', {
-        params: {
-            function: 'GLOBAL_QUOTE',
-            symbol: symbol,
-            apikey: apiKey
+      const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&apikey=${this.alphaVantageKey}`;
+      const response = await axios.get(url);
+      const data = response.data['Time Series (Daily)'];
+
+      if (!data) {
+        this.logger.warn(`No price data found for ${symbol}`);
+        return;
+      }
+
+      const latestDate = Object.keys(data)[0];
+      const priceData = data[latestDate];
+
+      await this.prisma.price.upsert({
+        where: {
+          symbol_date: {
+            symbol,
+            date: new Date(latestDate).toISOString(),
+          },
         },
-        timeout: 10000 // 10s timeout
+        update: {
+          open: parseFloat(priceData['1. open']),
+          high: parseFloat(priceData['2. high']),
+          low: parseFloat(priceData['3. low']),
+          close: parseFloat(priceData['4. close']),
+          volume: BigInt(priceData['5. volume']),
+        },
+        create: {
+          symbol,
+          date: new Date(latestDate).toISOString(),
+          open: parseFloat(priceData['1. open']),
+          high: parseFloat(priceData['2. high']),
+          low: parseFloat(priceData['3. low']),
+          close: parseFloat(priceData['4. close']),
+          volume: BigInt(priceData['5. volume']),
+        },
       });
 
-      // Check for API Limit or Errors
-      if (response.data['Note']) {
-          this.logger.warn(`Alpha Vantage API Limit reached: ${response.data['Note']}`);
-          return this.getMockData(symbol); // Fallback to mock on rate limit
-      }
-
-      if (response.data['Error Message']) {
-          throw new Error(`API Error: ${response.data['Error Message']}`);
-      }
-
-      const quote = response.data['Global Quote'];
-      
-      if (!quote || Object.keys(quote).length === 0) {
-           this.logger.warn(`No global quote data found for ${symbol}`);
-           return this.getMockData(symbol);
-      }
-
-      // Parse Alpha Vantage Response
-      // "01. symbol": "IBM", "05. price": "120.00", ...
-      return {
-        symbol: quote['01. symbol'],
-        price: parseFloat(quote['05. price']),
-        open: parseFloat(quote['02. open']),
-        high: parseFloat(quote['03. high']),
-        low: parseFloat(quote['04. low']),
-        volume: parseInt(quote['06. volume']),
-        change: parseFloat(quote['09. change']),
-        changePercent: parseFloat(quote['10. change percent'].replace('%', '')),
-        timestamp: new Date()
-      };
-
+      this.logger.log(`Updated price for ${symbol} for ${latestDate}`);
     } catch (error) {
-      this.logger.error(`Failed to fetch price for ${symbol}: ${error.message}`);
-      // Fallback to mock data to keep the app running in case of external errors
-      return this.getMockData(symbol);
+      this.logger.error(`Error fetching price for ${symbol}: ${error.message}`);
     }
   }
 
-  private getMockData(symbol: string): StockPriceData {
-      const basePrice = Math.random() * 200 + 100;
-      return {
-        symbol: symbol.toUpperCase(),
-        price: Number((basePrice).toFixed(2)),
-        open: Number((basePrice - Math.random() * 2).toFixed(2)),
-        high: Number((basePrice + Math.random() * 5).toFixed(2)),
-        low: Number((basePrice - Math.random() * 5).toFixed(2)),
-        volume: Math.floor(Math.random() * 1000000) + 50000,
-        change: Number((Math.random() * 10 - 5).toFixed(2)),
-        changePercent: Number((Math.random() * 5 - 2.5).toFixed(2)),
-        timestamp: new Date(),
-      };
+  async fetchFinancials(symbol: string) {
+    try {
+      const url = `https://financialmodelingprep.com/api/v3/income-statement/${symbol}?limit=4&apikey=${this.fmpKey}`;
+      const response = await axios.get(url);
+      const data = response.data;
+
+      if (!Array.isArray(data) || data.length === 0) {
+        this.logger.warn(`No financial data found for ${symbol}`);
+        return;
+      }
+
+      for (const item of data) {
+        await this.prisma.financial.upsert({
+          where: {
+            symbol_date_period: {
+              symbol,
+              date: new Date(item.date).toISOString(),
+              period: item.period,
+            }
+          },
+          update: {
+            revenue: item.revenue,
+            netIncome: item.netIncome,
+            eps: item.eps,
+          },
+          create: {
+            symbol,
+            date: new Date(item.date).toISOString(),
+            period: item.period,
+            revenue: item.revenue,
+            netIncome: item.netIncome,
+            eps: item.eps,
+          }
+        });
+      }
+      this.logger.log(`Updated financials for ${symbol}`);
+    } catch (error) {
+      this.logger.error(`Error fetching financials for ${symbol}: ${error.message}`);
+    }
   }
 }
