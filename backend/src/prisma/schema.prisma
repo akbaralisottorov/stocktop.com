@@ -1,0 +1,190 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String      @id @default(uuid())
+  email         String      @unique
+  password      String
+  firstName     String?
+  lastName      String?
+  role          Role        @default(USER)
+  portfolios    Portfolio[]
+  watchlists    Watchlist[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@map("users")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+model Stock {
+  symbol          String           @id
+  companyName     String
+  exchange        String
+  sector          String
+  industry        String?
+  prices          Price[]
+  financials      Financial[]
+  indicators      Indicator[]
+  score           Score[]
+  recommendations Recommendation[]
+  portfolios      PortfolioItem[]
+  watchlists      WatchlistItem[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@map("stocks")
+}
+
+model Price {
+  id        String   @id @default(uuid())
+  symbol    String
+  stock     Stock    @relation(fields: [symbol], references: [symbol])
+  date      DateTime
+  open      Float
+  high      Float
+  low       Float
+  close     Float
+  volume    BigInt
+  createdAt DateTime @default(now())
+
+  @@unique([symbol, date])
+  @@map("prices")
+}
+
+model Financial {
+  id            String   @id @default(uuid())
+  symbol        String
+  stock         Stock    @relation(fields: [symbol], references: [symbol])
+  date          DateTime
+  period        String   // e.g., "FY", "Q1"
+  revenue       Float?
+  netIncome     Float?
+  eps           Float?
+  totalDebt     Float?
+  totalEquity   Float?
+  roe           Float?
+  debtToEquity  Float?
+  createdAt     DateTime @default(now())
+
+  @@unique([symbol, date, period])
+  @@map("financials")
+}
+
+model Indicator {
+  id        String   @id @default(uuid())
+  symbol    String
+  stock     Stock    @relation(fields: [symbol], references: [symbol])
+  date      DateTime
+  rsi       Float?
+  macd      Float?
+  macdSignal Float?
+  macdHist   Float?
+  sma50     Float?
+  sma200    Float?
+  upperBand Float?
+  lowerBand Float?
+  createdAt DateTime @default(now())
+
+  @@unique([symbol, date])
+  @@map("indicators")
+}
+
+model Score {
+  id              String   @id @default(uuid())
+  symbol          String
+  stock           Stock    @relation(fields: [symbol], references: [symbol])
+  date            DateTime
+  totalScore      Int
+  technicalScore  Int
+  fundamentalScore Int
+  growthScore     Int
+  riskScore       Int
+  createdAt       DateTime @default(now())
+
+  @@unique([symbol, date])
+  @@map("scores")
+}
+
+model Recommendation {
+  id        String   @id @default(uuid())
+  symbol    String
+  stock     Stock    @relation(fields: [symbol], references: [symbol])
+  date      DateTime
+  rating    Rating
+  period    String   // e.g., "Short-term", "Long-term"
+  createdAt DateTime @default(now())
+
+  @@map("recommendations")
+}
+
+enum Rating {
+  STRONG_BUY
+  BUY
+  HOLD
+  SELL
+  STRONG_SELL
+}
+
+model Portfolio {
+  id        String          @id @default(uuid())
+  name      String
+  userId    String
+  user      User            @relation(fields: [userId], references: [id])
+  items     PortfolioItem[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@map("portfolios")
+}
+
+model PortfolioItem {
+  id          String    @id @default(uuid())
+  portfolioId String
+  portfolio   Portfolio @relation(fields: [portfolioId], references: [id])
+  symbol      String
+  stock       Stock     @relation(fields: [symbol], references: [symbol])
+  quantity    Float
+  averagePrice Float
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("portfolio_items")
+}
+
+model Watchlist {
+  id        String          @id @default(uuid())
+  name      String
+  userId    String
+  user      User            @relation(fields: [userId], references: [id])
+  items     WatchlistItem[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@map("watchlists")
+}
+
+model WatchlistItem {
+  id          String    @id @default(uuid())
+  watchlistId String
+  watchlist   Watchlist @relation(fields: [watchlistId], references: [id])
+  symbol      String
+  stock       Stock     @relation(fields: [symbol], references: [symbol])
+  createdAt   DateTime  @default(now())
+
+  @@unique([watchlistId, symbol])
+  @@map("watchlist_items")
+}

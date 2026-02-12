@@ -17,10 +17,10 @@ export class CreateStockDto {
   @IsNotEmpty()
   exchange: string;
 
-  @ApiPropertyOptional({ example: 'Technology' })
+  @ApiProperty({ example: 'Technology' })
   @IsString()
-  @IsOptional()
-  sector?: string;
+  @IsNotEmpty()
+  sector: string;
 
   @ApiPropertyOptional({ example: 'Consumer Electronics' })
   @IsString()
