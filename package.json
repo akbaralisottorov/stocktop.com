@@ -12,7 +12,15 @@
     "react-dom": "^19.2.4",
     "react": "^19.2.4",
     "recharts": "^3.7.0",
-    "lucide-react": "^0.563.0"
+    "lucide-react": "^0.563.0",
+    "@nestjs/common": "^11.1.13",
+    "@prisma/client": "^7.3.0",
+    "class-validator": "^0.14.3",
+    "@nestjs/swagger": "^11.2.6",
+    "@nestjs/config": "^4.0.3",
+    "bullmq": "^5.67.3",
+    "@nestjs/bullmq": "^11.0.4",
+    "axios": "^1.13.5"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
